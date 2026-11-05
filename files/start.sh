@@ -103,8 +103,9 @@ fi
 #
 # mprime itself never finishes: with an empty queue it waits for more work. So this script watches the files:
 # the work is done when worktodo.txt has no assignment left, and everything is sent when no results are
-# spooled (prime.spl), no proof files are waiting (*.proof) and no staged P-1 residue is waiting (p1send.*,
-# only counted once a proxy has said it accepts them: AcceptsP1Uploads=1). Then it stops mprime and exits 0.
+# spooled (prime.spl), no proof files are waiting (*.proof, unless ProofUploads=0) and no staged P-1 residue is
+# waiting (p1send.*, only counted once a proxy has said it accepts them: AcceptsP1Uploads=1, and not P1Uploads=0).
+# These are the rules mprime itself uses for "is anything left to send". Then it stops mprime and exits 0.
 # Exit codes matter to Kubernetes: a Job treats 0 as "the work is finished". mprime itself exits 0 when it is
 # stopped by SIGTERM, which a pre-empted or drained pod gets, so this script runs mprime as a child and exits
 # 143 when it is told to stop. Only a finished job exits 0, and only if the files check out.
@@ -116,7 +117,10 @@ primenet_on() { grep -q -i -P '^UsePrimenet=1\s*$' "$dir/prime.txt"; }
 # Names of the files that are still waiting to be sent.
 pending_files() {
   local f
-  for f in "$dir"/prime.spl "$dir"/*.proof; do [ ! -e "$f" ] || echo "${f##*/}"; done
+  for f in "$dir"/prime.spl; do [ ! -e "$f" ] || echo "${f##*/}"; done
+  if ! grep -q -i -P '^ProofUploads=0\s*$' "$dir/prime.txt"; then
+    for f in "$dir"/*.proof; do [ ! -e "$f" ] || echo "${f##*/}"; done
+  fi
   if grep -q -i -P '^AcceptsP1Uploads=1\s*$' "$dir/prime.txt" && ! grep -q -i -P '^P1Uploads=0\s*$' "$dir/prime.txt"; then
     for f in "$dir"/p1send.*; do [ ! -e "$f" ] || echo "${f##*/}"; done
   fi
@@ -138,8 +142,9 @@ while kill -0 "$pid" 2>/dev/null; do
   elif ! primenet_on; then
     # QuitGIMPS (NoMoreWork) switches PrimeNet off once the queue is empty, and nothing is sent after that.
     echo "ERROR: the assignments are finished but PrimeNet is switched off, so these will never be sent: $(echo $pending)" >&2
-    echo "       With P-1 stage 1 residues, use job.noMoreWork=false and DaysOfWork=0 in config.prime, or an mprime where" >&2
-    echo "       QuitGIMPS waits for p1send files." >&2
+    echo "       Older mprime builds do this with staged P-1 residues (p1send files). Use an mprime where QuitGIMPS waits" >&2
+    echo "       for them (the markrose/mprime p1-proxy build from commit e30a471), or set job.noMoreWork=false and" >&2
+    echo "       DaysOfWork=0 in config.prime." >&2
     failed=1; kill -TERM "$pid" 2>/dev/null || true
   else
     [ "$idle_since" -ge 0 ] || { idle_since=$SECONDS; echo "Job: the assignments are finished; waiting for: $(echo $pending)"; }

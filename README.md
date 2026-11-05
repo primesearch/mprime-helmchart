@@ -172,11 +172,11 @@ created: to change one, `helm uninstall` it and install it again.
   worktodo. `UnreserveDays` is huge (also in the normal mode, `config.unreserveDays`), because with the default
   30 days a month of queued work, or a slow machine, makes mprime hand unstarted assignments back to PrimeNet
   and delete them from `worktodo.txt`.
-  **Known problem:** once the queue is empty, `NoMoreWork` makes mprime switch PrimeNet off, and nothing is sent
-  after that. A staged P-1 residue (`p1send.*`, from a stage-1-only `Pfactor=` assignment through a proxy) would
-  never be uploaded; the job notices and fails with a message saying so. This is a bug in mprime that is being
-  fixed in the fork. Until you run that build, set `job.noMoreWork: false` and `DaysOfWork: 0` under
-  `config.prime` for those jobs (`DaysOfWork=0` also stops it fetching new work).
+  Once the queue is empty, `NoMoreWork` makes mprime switch PrimeNet off. Builds before commit e30a471 of the
+  p1-proxy fork did that even with a staged P-1 residue (`p1send.*`) still to upload, which would have stranded
+  it. The job notices and fails with a message instead of finishing. Use a build that has the fix (below), or for
+  those jobs set `job.noMoreWork: false` and `DaysOfWork: 0` under `config.prime` (`DaysOfWork=0` also stops it
+  fetching new work). Stock mprime has no staged residues, so it is not affected.
 - **Slots: reusing a computer.** A job runs as the PrimeNet computer `kube-job-<slot>`, and its volume is named the
   same. `job.slot` defaults to the release name, which makes a new computer for every job. Give it a name (lower
   case letters, digits and `-`, 11 characters at most with the default prefix) and later jobs with that slot find
@@ -241,6 +241,13 @@ Point mprime at the proxy through `prime.txt` (this is what a patched mprime rea
       prime:
         PrimeNet:
           MersenneIP: proxy.example.com:8191
+
+The proxy-aware mprime is a separate build, the `p1-proxy` branch of [MarkRose/mprime](https://github.com/MarkRose/mprime),
+published as `ghcr.io/markrose/mprime`. Pin an immutable tag, for example
+`--set image.repository=ghcr.io/markrose/mprime --set image.tag=sha-e30a471` (the first commit where a job waits for
+staged residues before quitting). That image has the same layout as this chart's default image. It has been tested
+on a stand-in server only, and only builds with the AVX2 (FMA3) code paths are known to suit Haswell-era CPUs, so
+try a short run on your nodes first.
 
 This is only a settings pass-through for now: the chart does not deploy a proxy, does not set up TLS or
 authentication, and the stock mprime image does not use proxy features.

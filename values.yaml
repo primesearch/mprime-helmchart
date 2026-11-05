@@ -113,8 +113,10 @@ job:
   computerPrefix: kube-job
   computerName: ""
   # Tell mprime to stop asking PrimeNet for more work (NoMoreWork). Once the queue is empty mprime then switches
-  # PrimeNet off, which strands a staged P-1 residue (p1send.*): the job then fails with a message instead of
-  # finishing. For P-1 stage 1 jobs through a proxy set this to false and put `DaysOfWork: 0` in config.prime.
+  # PrimeNet off. Older mprime builds do that even with a staged P-1 residue (p1send.*) still to upload, which
+  # strands it: the job then fails with a message instead of finishing. The p1-proxy build from commit e30a471
+  # (ghcr.io/markrose/mprime:sha-e30a471) waits for the residue. With an older build, for P-1 stage 1 jobs
+  # through a proxy, set this to false and put `DaysOfWork: 0` in config.prime.
   noMoreWork: true
   # After the last assignment finishes, wait at most this long for results, proofs and residues to be sent
   # (mprime retries every hour or so while the server is unreachable). If they are still not sent, the job fails
