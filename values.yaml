@@ -1,0 +1,188 @@
+# Default values for the mprime chart.
+#
+# Each replica is one pod running one mprime process, with its own persistent volume and its own
+# stable PrimeNet "computer name" (<computerIdPrefix>-0, -1, ...).
+
+# statefulset: long-running workers that get their assignments from PrimeNet, as many as replicaCount.
+# job: one run of a given worktodo, which stops when the work is finished and everything is sent. See `job`
+# below and "Job mode" in README.md.
+mode: statefulset
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/primesearch/mprime-kubernetes-image
+  # Defaults to the chart's appVersion (the mprime version).
+  tag: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+# What goes into mprime's prime.txt. See README.md for how this is applied on restarts.
+# Note: changes to a value are applied when the pods restart, but REMOVING a setting does not remove
+# its line from prime.txt (this includes config.prime entries). See "Changing settings" in README.md.
+config:
+  # Talk to PrimeNet (get work, report results). If false, mprime only runs what is in worktodo.txt in the
+  # pod's volume, which you put there yourself (for example with `kubectl cp`).
+  usePrimenet: true
+  # Your PrimeNet user name (https://www.mersenne.org). ANONYMOUS works but is not credited to you.
+  userId: ANONYMOUS
+  # Computer names on PrimeNet are <computerIdPrefix>-<pod number>: unique within the release, and the
+  # same after a pod is rescheduled. Defaults to the Helm release name. The whole name may be at most 20
+  # characters (letters, digits, '.', '-', '_'); the chart refuses to install if it would be longer.
+  # Names must also be unique across everything using your PrimeNet account, for example another
+  # release with the same name in a different namespace or cluster, so set this if that applies.
+  computerIdPrefix: ""
+  # A short name for this cluster, added to the default prefix: release "mprime" with clusterName "iad"
+  # gives computers mprime-iad-0, mprime-iad-1, ... Use it when installing the same release name in
+  # several clusters (or namespaces) under one PrimeNet account. Ignored if computerIdPrefix is set.
+  clusterName: ""
+  # Tell PrimeNet the computer's hardware never changes (mprime's FixedHardwareUID). Without this, a
+  # pod rescheduled onto a different CPU model, which happens on a mixed pool such as Spot, is seen as
+  # new hardware and mprime registers a new computer and abandons its work assignments. Keep it on.
+  fixedHardwareUid: true
+  # PrimeNet work type: 0 = whatever makes the most sense, 4 = P-1 factoring,
+  # 100/101/102 = LL, 150/151/152 = PRP. See the mprime documentation for the full list.
+  workPreference: 0
+  # Each pod runs ONE mprime worker that uses all the cores it is allowed. The thread count is worked out
+  # each time mprime starts: the CPU limit (resources.limits.cpu) rounded up, but no more than the physical cores
+  # available, since mprime gains nothing from hyperthreads. With no CPU limit that means every core on the
+  # node. Set a number to use a fixed thread count instead; 0 means work it out.
+  coresPerTest: 0
+  # Memory mprime may use, in MB, shared by ALL workers in the pod. 0 (the default) means: work it out
+  # each time mprime starts as  resources.limits.memory - memoryReserveMB - memoryReservePercent%.
+  # Set a number to use a fixed value instead. Never leave mprime on its own default: it looks at the
+  # NODE's RAM, not the pod's limit, and by default tries to use nearly all of it, so the pod would be
+  # OOM-killed over and over. If no memory limit is set, Kubernetes reports the node's allocatable memory;
+  # the calculation is then applied to that, or to the memory that is free right now, whichever is less.
+  # A Memory entry under config.prime overrides all of this.
+  memoryMB: 0
+  # What to keep back from the limit for everything that Memory does not cover: the program and its
+  # libraries, thread stacks, malloc overhead, the file cache of the pod's volume, and the moments when
+  # mprime re-plans and briefly allocates more than it was told to (it tolerates 250 MB over before it
+  # gives memory back). Measured overshoot on stock mprime 30.19 was about 1% (~40 MB at a 4 GB setting).
+  # Lower these if you need every last MB for P-1 stage 2, and watch for OOMKilled pods. With a small limit
+  # the reserve would take everything, so mprime is never given less than half of the limit.
+  memoryReserveMB: 1536
+  memoryReservePercent: 3
+  # The least Memory to give mprime. This is a policy of the chart, not a limit in mprime. Below the amount
+  # P-1 stage 2 needs (about 4 MB per million of the exponent, so ~400 MB at 100M and ~1.1 GB at 300M, and
+  # in practice far more) mprime does not fail: it keeps waiting without making progress, which is worse in a
+  # pod than a clear error. So if the calculation above leaves less than this (a small memory limit, or a node
+  # with little free memory) the container stops with an error message and is retried with a back-off.
+  # With the default reserve and the half-of-the-limit rule above that means a limit of 2 GiB or more.
+  # Not applied to a fixed memoryMB.
+  # PRP and LL tests do not use Memory at all: for a pod that only runs those, set this to 0 and size the
+  # memory limit by the exponent instead (about 15 MB plus 3.5 MB per million: ~350 MB at 100M, ~1 GB at 300M).
+  memoryMinMB: 1024
+  # How many days of queued work make mprime give the unstarted assignments back to PrimeNet (its
+  # UnreserveDays). The default of 30 gives work back when the machine is slow, which on a pre-emptible,
+  # low-priority pod happens often, so keep it huge to hold on to the assignments.
+  unreserveDays: 99999
+  # Pin threads to CPUs. Leave off unless a pod owns a whole node and you know the CPU numbering.
+  enableSetAffinity: false
+  # Any other prime.txt setting. Plain values go at the top of the file; a map becomes a [section].
+  # Example (for a P-1 proxy):
+  #   prime:
+  #     DiskWriteTime: 10
+  #     PrimeNet:
+  #       MersenneIP: proxy.example.com:8191
+  # Values must be single values (a map is a [section]); keys and values can't contain '=' (keys), tabs or
+  # newlines. A ComputerID here replaces the generated <prefix>-<pod number> name, for every pod.
+  prime: {}
+
+# Job mode (mode: job): run the assignments in job.worktodo to the end, then stop. One Helm release is one job:
+#   helm install myjob . --set mode=job --set-file job.worktodo=worktodo.txt
+# The job survives pre-emptions (a new pod takes over on the same volume and carries on from the checkpoint).
+# It ends once worktodo.txt has no assignment left and everything has been sent to PrimeNet or the proxy (results,
+# proof files, staged P-1 residues). Uploads need config.usePrimenet: true. A Job cannot be changed once
+# created: to change one, uninstall it and install it again.
+job:
+  # The assignments, as the lines of a worktodo.txt. Required. (P-1 stage 1 residues are only staged for Pfactor=
+  # lines, not Pminus1= lines.)
+  worktodo: ""
+  # What a job keeps between runs: the PrimeNet computer (its name and GUID) and its volume. A later job with the
+  # same slot continues as the same computer. Defaults to the release name, which is a new computer each time.
+  # Lower case letters, digits and '-'. One job at a time per slot (the chart refuses a slot that another
+  # release is using).
+  slot: ""
+  # The computer is named <computerPrefix>-<slot> (<computerPrefix>-<clusterName>-<slot> if config.clusterName is
+  # set), at most 20 characters, so 11 for the slot with the default prefix. computerName replaces the whole name.
+  computerPrefix: kube-job
+  computerName: ""
+  # Tell mprime to stop asking PrimeNet for more work (NoMoreWork). Once the queue is empty mprime then switches
+  # PrimeNet off, which strands a staged P-1 residue (p1send.*): the job then fails with a message instead of
+  # finishing. For P-1 stage 1 jobs through a proxy set this to false and put `DaysOfWork: 0` in config.prime.
+  noMoreWork: true
+  # After the last assignment finishes, wait at most this long for results, proofs and residues to be sent
+  # (mprime retries every hour or so while the server is unreachable). If they are still not sent, the job fails
+  # and the files stay on the volume.
+  maxWaitSeconds: 86400
+  # Times a failed pod is replaced. Pre-emptions and drains do not count.
+  backoffLimit: 6
+  # Give up on the whole job after this many seconds (0: never).
+  activeDeadlineSeconds: 0
+  # Delete the finished Job after this many seconds (0: keep it until you uninstall the release).
+  ttlSecondsAfterFinished: 0
+  # Keep the volume when the release is uninstalled, so the next job with this slot can reuse it. Delete it with
+  # `kubectl delete pvc <computerPrefix>-<slot>`.
+  keepVolume: true
+
+# Where mprime keeps its work files and save files.
+persistence:
+  # Strongly recommended: lets a pod resume from its checkpoint after being moved to a new node.
+  # Without it, the files live in an emptyDir and are lost whenever the pod is rescheduled.
+  enabled: true
+  # Empty uses the cluster's default storage class. On Rackspace Spot: size limits depend on the
+  # class (see README.md), and ReadWriteOnce is the only access mode.
+  storageClass: ""
+  # A PRP test needs temporary disk space for its proof (several GB for large exponents),
+  # so leave room for that.
+  size: 10Gi
+  accessModes: [ReadWriteOnce]
+  # What happens to the volumes when the release is deleted or scaled down: Retain or Delete.
+  # (Needs Kubernetes 1.27+. Retained volumes keep being billed until you delete the PVC.)
+  retentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+
+# Left empty on purpose, which makes the pods BestEffort: the lowest CPU weight (mprime only gets CPU that
+# other pods leave idle) and the first to be evicted when a node runs short of memory. The threads and memory
+# are then sized to the node (see README.md), so one chart works on any instance size. Best for nodes that run
+# little else, such as a dedicated Spot node pool. Set them to be a better neighbour on a shared cluster, e.g.
+#   resources:
+#     requests: {cpu: 10m, memory: 2Gi}   # low CPU weight; memory the scheduler reserves
+#     limits: {cpu: 8, memory: 16Gi}      # threads = cpu limit rounded up (at most the physical cores);
+#                                         # memory = limit less config.memoryReserve*
+resources: {}
+
+# mprime writes a checkpoint within a second or two of SIGTERM. A pre-empted Rackspace Spot node
+# is drained about a minute after the warning, so this is generous.
+terminationGracePeriodSeconds: 120
+
+# Prefer to put each pod on a different node.
+spreadAcrossNodes: true
+
+podAnnotations: {}
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+# Replaces the spreadAcrossNodes rule when set.
+affinity: {}
+priorityClassName: ""
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]

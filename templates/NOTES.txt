@@ -1,0 +1,31 @@
+{{- if eq .Values.mode "job" }}
+mprime job "{{ include "mprime.fullname" . }}" queued as PrimeNet computer {{ include "mprime.jobComputerName" . }} (slot {{ include "mprime.jobSlot" . }}).
+It stops by itself when the assignments are finished and everything is sent. Watch it:
+  kubectl --namespace {{ .Release.Namespace }} logs -f job/{{ include "mprime.fullname" . }} -c mprime
+  kubectl --namespace {{ .Release.Namespace }} get job {{ include "mprime.fullname" . }}
+{{- if .Values.job.keepVolume }}
+Its volume ({{ include "mprime.jobClaimName" . }}) is kept when you uninstall, so the next job with this slot reuses the computer.
+{{- end }}
+{{- else }}
+{{- $n := int .Values.replicaCount }}
+{{- if eq $n 0 }}
+mprime is scaled to zero pods.
+{{- else if eq $n 1 }}
+mprime is running as 1 pod, {{ include "mprime.fullname" . }}-0.
+{{- else }}
+mprime is running as {{ $n }} pods, {{ include "mprime.fullname" . }}-0 .. {{ include "mprime.fullname" . }}-{{ sub $n 1 }}.
+{{- end }}
+{{- if and .Values.config.usePrimenet (gt $n 0) }}
+PrimeNet user: {{ .Values.config.userId }}. Computer name{{ if gt $n 1 }}s{{ end }}: {{ include "mprime.computerIdPrefix" . }}-0{{ if gt $n 1 }}{{ if gt $n 2 }}, ...{{ else }}, {{ include "mprime.computerIdPrefix" . }}-1{{ end }}{{ end }}
+{{- if eq .Values.config.userId "ANONYMOUS" }}
+Results are not credited to you: set config.userId to your mersenne.org user name.
+{{- end }}
+{{- end }}
+
+Watch the work:
+  kubectl --namespace {{ .Release.Namespace }} logs -f {{ include "mprime.fullname" . }}-0 -c mprime
+{{- if not .Values.persistence.enabled }}
+
+persistence.enabled is false: checkpoints are lost whenever a pod moves to another node.
+{{- end }}
+{{- end }}

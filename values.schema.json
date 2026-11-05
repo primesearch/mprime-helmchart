@@ -1,0 +1,185 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "replicaCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "image": {
+      "type": "object",
+      "properties": {
+        "repository": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tag": {
+          "type": "string"
+        },
+        "pullPolicy": {
+          "enum": [
+            "Always",
+            "IfNotPresent",
+            "Never"
+          ]
+        }
+      }
+    },
+    "config": {
+      "type": "object",
+      "required": [
+        "usePrimenet",
+        "userId",
+        "workPreference",
+        "fixedHardwareUid",
+        "coresPerTest",
+        "memoryMB",
+        "memoryReserveMB",
+        "memoryReservePercent",
+        "memoryMinMB",
+        "enableSetAffinity",
+        "unreserveDays"
+      ],
+      "properties": {
+        "usePrimenet": {
+          "type": "boolean"
+        },
+        "userId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "computerIdPrefix": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]*$"
+        },
+        "clusterName": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]*$"
+        },
+        "fixedHardwareUid": {
+          "type": "boolean"
+        },
+        "workPreference": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "coresPerTest": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "memoryMB": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "memoryReserveMB": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "memoryReservePercent": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 99
+        },
+        "memoryMinMB": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "enableSetAffinity": {
+          "type": "boolean"
+        },
+        "prime": {
+          "type": "object"
+        },
+        "unreserveDays": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "persistence": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "storageClass": {
+          "type": "string"
+        },
+        "size": {
+          "type": "string",
+          "minLength": 1
+        },
+        "accessModes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "terminationGracePeriodSeconds": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "spreadAcrossNodes": {
+      "type": "boolean"
+    },
+    "mode": {
+      "enum": [
+        "statefulset",
+        "job"
+      ]
+    },
+    "job": {
+      "type": "object",
+      "required": [
+        "computerPrefix",
+        "noMoreWork",
+        "maxWaitSeconds",
+        "backoffLimit",
+        "activeDeadlineSeconds",
+        "ttlSecondsAfterFinished",
+        "keepVolume"
+      ],
+      "properties": {
+        "worktodo": {
+          "type": "string"
+        },
+        "slot": {
+          "type": "string",
+          "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$|^$"
+        },
+        "computerPrefix": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]+$"
+        },
+        "computerName": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]*$"
+        },
+        "noMoreWork": {
+          "type": "boolean"
+        },
+        "keepVolume": {
+          "type": "boolean"
+        },
+        "maxWaitSeconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "backoffLimit": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "activeDeadlineSeconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ttlSecondsAfterFinished": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

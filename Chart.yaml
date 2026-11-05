@@ -1,0 +1,21 @@
+apiVersion: v2
+name: mprime
+description: Run mprime (GIMPS / Great Internet Mersenne Prime Search) workers on Kubernetes, including preemptible clusters such as Rackspace Spot.
+type: application
+# Chart version: the mprime version as SemVer (30.19 build 20 -> 30.19.20) plus our own revision of the
+# chart, like -ubuntu1 on a Debian package. The dot in primesearch.N makes SemVer compare the number
+# numerically (primesearch.10 sorts after primesearch.2). Bump N for chart-only changes; reset to 1
+# for a new mprime version. The git tag is exactly this string.
+version: 30.19.20-primesearch.1
+# The mprime-kubernetes-image tag that is deployed when image.tag is not set. Pinned to an immutable
+# release tag of the image.
+appVersion: "30.19b20-primesearch.1"
+home: https://github.com/primesearch/mprime-helmchart
+sources:
+  - https://github.com/primesearch/mprime-helmchart
+  - https://github.com/primesearch/mprime-kubernetes-image
+keywords:
+  - gimps
+  - mprime
+  - prime95
+  - mersenne

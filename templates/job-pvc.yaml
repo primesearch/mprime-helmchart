@@ -1,0 +1,33 @@
+{{- if and (eq .Values.mode "job") .Values.persistence.enabled }}
+{{- /*
+The volume of a job lives under the name of its slot, not of the release, so a later job with the same slot finds
+it and keeps the same PrimeNet computer (GUID, save files). If the claim already exists and a different release
+made it, use it as it is; if this release made it (an upgrade), keep rendering it so Helm does not delete it.
+*/ -}}
+{{- $name := include "mprime.jobClaimName" . }}
+{{- $existing := lookup "v1" "PersistentVolumeClaim" .Release.Namespace $name }}
+{{- $owner := dig "metadata" "annotations" "meta.helm.sh/release-name" "" ($existing | default dict) }}
+{{- if or (not $existing) (eq $owner .Release.Name) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "mprime.selectorLabels" . | nindent 4 }}
+    {{ include "mprime.slotLabel" . }}: {{ include "mprime.jobSlot" . | quote }}
+  {{- if .Values.job.keepVolume }}
+  annotations:
+    # Helm leaves the volume behind on uninstall, so the next job with this slot can reuse it.
+    helm.sh/resource-policy: keep
+  {{- end }}
+spec:
+  accessModes:
+    {{- toYaml .Values.persistence.accessModes | nindent 4 }}
+  {{- with .Values.persistence.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.size | quote }}
+{{- end }}
+{{- end }}

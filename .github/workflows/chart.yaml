@@ -1,0 +1,65 @@
+name: Chart
+
+on:
+  push:
+    branches: ['main']
+    tags: ['[0-9]*-primesearch.[0-9]*']
+  pull_request:
+
+env:
+  HELM_VERSION: v3.19.0
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - name: Chart version and appVersion agree
+        # version 30.19.20-primesearch.1 goes with appVersion 30.19b20-primesearch.N: the same mprime version.
+        run: |
+          version=$(sed -n 's/^version: //p' Chart.yaml)
+          app=$(sed -n 's/^appVersion: //p' Chart.yaml | tr -d '"')
+          test -n "$version" && test -n "$app"
+          test "${version%%-*}" = "$(echo "${app%%-*}" | sed 's/b/./')" || {
+            echo "version ($version) and appVersion ($app) are for different mprime versions"; exit 1; }
+      - name: Lint
+        run: |
+          helm lint .
+          helm lint . --set persistence.enabled=false --set config.usePrimenet=false
+      - name: Render
+        run: |
+          helm template test . > /dev/null
+          helm template test . --set resources.limits.cpu=4 --set resources.limits.memory=8Gi --set replicaCount=3 > /dev/null
+          helm lint . --set mode=job --set job.slot=a --set-string job.worktodo=x
+          helm template test . --set mode=job --set job.slot=a --set-string job.worktodo=x > /dev/null
+
+  # Pushing a tag such as 30.19.20-primesearch.1 publishes the chart as an OCI artifact:
+  #   helm install mprime oci://ghcr.io/primesearch/charts/mprime --version 30.19.20-primesearch.1
+  # The tag must be exactly `version` in Chart.yaml.
+  publish:
+    if: github.ref_type == 'tag'
+    needs: lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - name: Check tag matches Chart.yaml
+        run: |
+          test "$(sed -n 's/^version: //p' Chart.yaml)" = "${GITHUB_REF_NAME}"
+      - name: Package and push
+        env:
+          REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+          REGISTRY_USER: ${{ github.actor }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          echo "$REGISTRY_PASSWORD" | helm registry login ghcr.io --username "$REGISTRY_USER" --password-stdin
+          helm package .
+          helm push mprime-*.tgz "oci://ghcr.io/$OWNER/charts"

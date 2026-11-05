@@ -1,0 +1,39 @@
+{{- if eq .Values.mode "statefulset" }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "mprime.fullname" . }}
+  labels:
+    {{- include "mprime.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  serviceName: {{ include "mprime.fullname" . }}
+  # Pods are independent, so create and delete them all at once when scaling. (A rolling update still replaces
+  # them one at a time.)
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      {{- include "mprime.selectorLabels" . | nindent 6 }}
+  {{- if and .Values.persistence.enabled .Values.persistence.retentionPolicy }}
+  persistentVolumeClaimRetentionPolicy:
+    {{- toYaml .Values.persistence.retentionPolicy | nindent 4 }}
+  {{- end }}
+  template:
+    {{- include "mprime.podTemplate" . | nindent 4 }}
+  {{- if .Values.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "mprime.selectorLabels" . | nindent 10 }}
+      spec:
+        accessModes:
+          {{- toYaml .Values.persistence.accessModes | nindent 10 }}
+        {{- with .Values.persistence.storageClass }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.size | quote }}
+  {{- end }}
+{{- end }}

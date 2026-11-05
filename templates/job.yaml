@@ -1,0 +1,34 @@
+{{- if eq .Values.mode "job" }}
+{{- include "mprime.checkSlotFree" . }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "mprime.fullname" . }}
+  labels:
+    {{- include "mprime.labels" . | nindent 4 }}
+    {{ include "mprime.slotLabel" . }}: {{ include "mprime.jobSlot" . | quote }}
+spec:
+  completions: 1
+  parallelism: 1
+  backoffLimit: {{ .Values.job.backoffLimit | int }}
+  {{- if gt (int .Values.job.activeDeadlineSeconds) 0 }}
+  activeDeadlineSeconds: {{ .Values.job.activeDeadlineSeconds | int }}
+  {{- end }}
+  {{- if gt (int .Values.job.ttlSecondsAfterFinished) 0 }}
+  ttlSecondsAfterFinished: {{ .Values.job.ttlSecondsAfterFinished | int }}
+  {{- end }}
+  # A pre-emption or drain is not the job's fault: replace the pod without counting it against backoffLimit.
+  # start.sh exits 143 when it is told to stop before the work is finished. (This needs restartPolicy: Never.)
+  podFailurePolicy:
+    rules:
+      - action: Ignore
+        onPodConditions:
+          - type: DisruptionTarget
+      - action: Ignore
+        onExitCodes:
+          containerName: mprime
+          operator: In
+          values: [143]
+  template:
+    {{- include "mprime.podTemplate" . | nindent 4 }}
+{{- end }}
